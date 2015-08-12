@@ -1,21 +1,18 @@
 {-# LANGUAGE OverloadedStrings, ScopedTypeVariables, TypeFamilies, TypeSynonymInstances, FlexibleInstances #-}
-module Database.Flat.JSON where
-
-import           Control.Applicative
+module Database.Flat.JSON.Types where
 
 import           Data.Aeson
 import           Data.Aeson.Types
 
-import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 
 import           Data.Text(Text)
 import           Data.Time.Clock
 
 ------------------------------------------------------------------------------------
--- | A CRUD is a OO-style database Table of typed rows, with getters and setters.
+-- | A Crud is a OO-style database Table of typed rows, with getters and setters.
 
-class CRUD f where
+class Crud f where
   createRow :: Object       -> f Row
   readRow   :: Id           -> f (Maybe Row)
   updateRow :: Id -> Object -> f () -- The _id and _ts fields are ignored in the object.
@@ -33,7 +30,7 @@ type Id        = Text
 --   This "_ts" field should be a record if *when* it was written.
 
 newtype Row = Row Object
-   deriving (Eq,Show)
+   deriving (Eq, Show)
 
 instance FromJSON Row where
     parseJSON (Object v) = 
@@ -58,28 +55,9 @@ rowUTCTime (Row o) = case parse (.: "_ts") o of
 lookupRow :: FromJSON a => Text -> Row -> Result a
 lookupRow field (Row o) = parse (.: field) o 
 
-----------------------------------------------------------
-
-data TableUpdate
-        = RowUpdate Row       -- update a row with a new row, by _id.
-        | RowDelete Id        -- consider previous updates to row deleted
-        | Shutdown Text       -- last message; please stop listening. Msg for informational purposes ony.
-        deriving (Show, Eq)
-        
-instance ToJSON TableUpdate where
-   toJSON (RowUpdate row)      = toJSON row
-   toJSON (RowDelete key)      = object ["delete"   .= key]     -- no _id key
-   toJSON (Shutdown msg)       = object ["shutdown" .= msg]     -- no _id key
-
-instance FromJSON TableUpdate where
-    parseJSON (Object v) = 
-         RowUpdate <$> parseJSON (Object v) <|> 
-         RowDelete <$> v .: "delete"        <|>
-         Shutdown  <$> v .: "shutdown"
-    parseJSON _ = error "TableUpdate Object was not a valid Object"
-
-
-tableUpdate :: TableUpdate -> HashMap Text Row -> HashMap Text Row
-tableUpdate (RowUpdate row) = HashMap.insert (rowId row) row
-tableUpdate (RowDelete key) = HashMap.delete key
-tableUpdate (Shutdown _msg) = id
+newRow :: Id -> Object -> IO Row
+newRow id_ obj = do
+        ts_ <- getCurrentTime
+        return $ Row $ HashMap.insert "_id" (toJSON id_)
+                     $ HashMap.insert "_ts" (toJSON ts_)
+                     $ obj 
