@@ -1,11 +1,11 @@
-name:                scotty-crud
-version:             0.2.0
-synopsis:            RESTful CRUD support for scotty
+name:                flat-json
+version:             0.1.0
+synopsis:            Flat file JSON record, with CRUD API
 license:             BSD3
 license-file:        LICENSE
 author:              Andy Gill
 maintainer:          andygill@ku.edu
-Copyright:           Copyright (c) 2014 The University of Kansas
+Copyright:           Copyright (c) 2015 The University of Kansas
 category:            Web
 build-type:          Simple
 cabal-version:       >=1.10
@@ -21,12 +21,12 @@ library
                        ScopedTypeVariables,
                        TypeFamilies,
                        TypeSynonymInstances
-  build-depends:       aeson                >= 0.7  && < 0.9,
-                       attoparsec           >= 0.11 && < 0.13,
-                       base                 >= 4.6  && < 4.8,
+  build-depends:       aeson                >= 0.7  && < 0.10,
+                       attoparsec           >= 0.13 && < 0.14,
+                       base                 >= 4.6  && < 4.9,
                        bytestring           >=0.10  && < 0.11,
                        http-types           >= 0.8.5,
-                       scotty               >= 0.8  && < 0.10,
+                       scotty               >= 0.8  && < 0.11,
                        stm                  >= 2.4  && < 2.5,
                        text                 >= 1.1  && < 1.3,
                        transformers         >= 0.3  && < 0.5,
@@ -36,13 +36,12 @@ library
   Ghc-options:         -Wall
 
 executable crud
-    build-depends:     aeson                >= 0.7  && < 0.9,
+    build-depends:     flat-json,
+                       aeson                >= 0.9  && < 0.10,
                        base                 >= 4.6,
                        bytestring           >= 0.10 && < 0.11,
                        containers           >= 0.5  && < 0.6,
-                       scotty               >= 0.8  && < 0.10,
                        scientific           >= 0.3.0,
-                       scotty-crud          == 0.2.0,
                        text                 >= 1.1  && < 1.3,
                        transformers         >= 0.3  && < 0.5,
                        unordered-containers >= 0.2  && < 0.3,
@@ -65,14 +64,14 @@ Test-Suite test-crud
                        TypeFamilies,
                        TypeOperators,
                        TypeSynonymInstances
-    build-depends:     aeson                >= 0.7  && < 0.9,
-                       base                 >= 4.6  && < 4.8,
+    build-depends:     flat-json,
+                       aeson                >= 0.9  && < 0.10,
+                       base                 >= 4.6  && < 4.9,
                        directory            >= 1.2  && < 1.3,
-                       QuickCheck           >= 2.7  && < 2.8,
+                       QuickCheck           >= 2.8  && < 2.9,
                        scientific           == 0.3.*,
-                       scotty-crud          == 0.2.0,
                        text                 >= 1.1  && < 1.3,
                        unordered-containers >= 0.2  && < 0.3,
-                       vector               >= 0.10 && < 0.11
+                       vector               >= 0.10
     default-language:  Haskell2010
     ghc-options:       -Wall

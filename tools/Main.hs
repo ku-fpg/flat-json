@@ -22,7 +22,6 @@ import           Network.Wai
 import           System.Environment
 import           System.IO
 
-import           Web.Scotty as Scotty hiding (raw)
 import           Web.Scotty.CRUD
 import           Web.Scotty.CRUD.JSON
 import           Web.Scotty.CRUD.SQL
@@ -39,10 +38,9 @@ main = do
           ("update":opts')                -> update_main   opts'
           ("delta":opts')                 -> delta_main     opts'
           ("where":opts')                  -> where_main    opts'
-          ("server":opts')                -> server_main   flags opts'
           _ -> error $ unlines
                 [ "usage: crud [options] [command] [files]"
-                , "         where command = compress | table | update | delta | server"
+                , "         where command = compress | table | update | delta"
                 , ""
                 , "  -- compress a db"
                 , "  crud compress < input.json > compressed-output.json"
@@ -67,19 +65,6 @@ main = do
                 ,"         * id < 1234      -- match row with id /= 1234"
                 ,"         * id like '%abc' -- match row with id suffixed with abc"
                 , ""
-                , "  -- serve up a set of db's (names and URL paths are synonymous)"
-                ,"   crud [--auth=user:pass|--read-only|--local|--index] server 3000 \\"
-                ,"         db.json [db2.json ...] [-- file [file ...]]"
-                ,""
-                ,"       Options:"
-                ,"         * --auth      -- use basic authentication"
-                ,"         * --read-only -- serve up the CRUDs read-only (not implemented)"
-                ,"         * --local     -- only accept connections from local macine (not implemented)"
-                ,"         * --index     -- serve an index.html as /index.html and /"
-                ,""
-                ,"      There are two types of things that can be served:"
-                ,"        * json-dbs     -- flat sequences of json objects"
-                ,"        * files        -- after --, served as flat files"
                 ]
 
 ------------------------------------------------------------------------------------------------------------
@@ -217,58 +202,6 @@ where_main [nm,op,match] = do
                      _                    -> []
 
 where_main _ = error "crud where: unknown options"
-
-------------------------------------------------------------------------------------------------------------
-
-server_main :: [String] -> [String] -> IO ()
-server_main opts (port:dbs) | all isDigit port && not (null port) = scotty (read port) $ do
-
-  let check u p = return
-                $ not
-                $ null
-                $ filter (\ (u',p') -> u == u' && p == p')
-                $ auth
-
-  if null auth
-  then return ()
-  else middleware $ \ app -> \ req ->
-          if requestMethod req == "OPTIONS"
-          then app req  -- OPTIONS do not permit authenticaton
-          else basicAuth check "CRUD" app req
-
-  sequence_ [ do crud <- liftIO $ persistentCRUD db
-                 scottyCRUD ('/':db) (crud :: CRUD Row)
-            | db <- takeWhile (/= "--") dbs ]
-
-
-  sequence_ [ do get (capture ('/' : nm)) $ do file nm
-            | nm <- dropWhile (/= "--") dbs
-            , nm /= "--"
-            ]
-
-
-  let index_html = do
-        addHeader "Content-Type" "text/html; charset=iso-8859-1"
-        file "index.html"
-
-  if not $ null $ [ () |"--index" <- opts ]
-  then do get "/" index_html
-          get "/index.html" index_html
-  else return ()
-
- where
-    auth = [ case span (/= ':') userPass of
-               (user,':':pass) -> (unraw user,unraw pass)
-               (user,[])       -> (unraw user,unraw [])
-           | opt <- opts
-           , "--auth=" `isPrefixOf` opt
-           , ('=':userPass) <- [dropWhile (/= '=') $ opt]
-           ]
-
-
-
-server_main _ _ = error "crud server: unknown options"
-
 
 ------------------------------------------------------------------------------------------------------------
 
