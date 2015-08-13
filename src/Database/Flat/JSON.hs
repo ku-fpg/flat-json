@@ -44,7 +44,7 @@ instance Crud CRUDr where
   deleteRow = DeleteRow 
  
 
-actorCRUD :: (TableUpdate -> IO ())	   
+actorCRUD :: (TableUpdate -> IO ()) -- single-threaded callback for updating
 	 -> Table               -- initial Table
 	 -> IO CRUD
 actorCRUD push env = do
@@ -78,8 +78,11 @@ actorCRUD push env = do
                        return iD
 
     let updateCRUD update = do
-          atomically $ modifyTVar table (tableUpdate update)
-          push update
+          tab <- atomically $ takeTVar table 
+          push update                     -- how do we handle failure here?
+          atomically $ putTVar table $ tableUpdate update
+          -- we do not return until the update has been commited to
+          -- both the internal and external state
 
     return $ CRUD $ \ case 
        CreateRow  obj -> do id_ <- atomically $ next
@@ -95,3 +98,18 @@ actorCRUD push env = do
                                updateCRUD $ RowUpdate row
 
        DeleteRow id_     -> updateCRUD $ RowDelete id_
+
+persistentCRUD :: Bool -> FilePath -> IO CRUD
+persistentCRUD online fileName = do
+        h <- openBinaryFile fileName ReadWriteMode
+        -- Read what you can, please, into a Table.
+        tab <- readTable h 
+
+        -- TODO: check for EOF & writeable, etc
+        
+        -- close then hadle
+        if online
+        then actorCRUD $ onlineTableUpdate h
+        else do hClose h
+                offlineTableUpdate fileName
+
