@@ -5,8 +5,10 @@ import           Control.Applicative
 import           Control.Concurrent
 import           Control.Concurrent.STM
 
-import           Data.Aeson
-import           Data.Aeson.Types
+import qualified Data.Aeson as Aeson
+
+import           Data.Aeson hiding (Object)
+import           Data.Aeson.Types hiding (Object)
 import           Data.Attoparsec.ByteString as Atto
 import qualified Data.ByteString.Lazy as LBS
 
@@ -25,19 +27,15 @@ import           Database.Flat.JSON.Table
 
 import           Control.Natural
 import           Control.Transformation
+import           Control.Object
 
-data CRUDr :: * -> * where
-  CreateRow :: Object       -> CRUDr Row
-  ReadRow   :: Id           -> CRUDr (Maybe Row)
-  UpdateRow :: Id -> Object -> CRUDr () 
-  DeleteRow :: Id           -> CRUDr ()
+data CRUD :: * -> * where
+  CreateRow :: Aeson.Object -> CRUD Row
+  ReadRow   :: Id           -> CRUD (Maybe Row)
+  UpdateRow :: Id -> Aeson.Object -> CRUD () 
+  DeleteRow :: Id           -> CRUD ()
 
-newtype CRUD = CRUD (forall a. CRUDr a -> IO a)
-
-instance Transformation CRUDr IO CRUD where
-  CRUD o # g = Nat o # g
-
-instance Crud CRUDr where
+instance Crud CRUD where
   createRow = CreateRow
   readRow   = ReadRow   
   updateRow = UpdateRow 
@@ -46,7 +44,7 @@ instance Crud CRUDr where
 
 actorCRUD :: Table 
           -> (TableUpdate -> IO ()) -- single-threaded callback for updating
-	  -> IO CRUD
+	  -> IO (Object CRUD)
 actorCRUD env push = do
 
     table :: TMVar Table <- newTMVarIO env
@@ -84,7 +82,7 @@ actorCRUD env push = do
           -- we do not return until the update has been commited to
           -- both the internal and external state
 
-    return $ CRUD $ \ case 
+    return $ Object $ Nat $ \ case 
        CreateRow obj -> do id_ <- atomically $ next -- this feels wrong, allocation without locking
                            row <- newRow id_ obj
                            updateCRUD (RowUpdate row)
@@ -100,7 +98,7 @@ actorCRUD env push = do
 
        DeleteRow id_     -> updateCRUD $ RowDelete id_
 
-persistentCRUD :: Bool -> FilePath -> IO CRUD
+persistentCRUD :: Bool -> FilePath -> IO (Object CRUD)
 persistentCRUD online fileName = do
         h <- openBinaryFile fileName ReadWriteMode
         -- Read what you can, please, into a Table.
