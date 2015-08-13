@@ -95,13 +95,15 @@ writeTable h table = sequence_
         | (_,row) <- HashMap.toList table
         ]
 
-persistanceTableUpdate  :: Handle -> TableUpdate -> IO ()
-persistanceTableUpdate h up = do
+-- | push an update to a handle, and sync.
+onlineTableUpdate  :: Handle -> TableUpdate -> IO ()
+onlineTableUpdate h up = do
         writeTableUpdate h up
         case up of
           Shutdown {} -> hClose h
           _           -> hFlush h
 
+-- | push an update to a file, closing afterwards.
 offlineTableUpdate :: FilePath -> TableUpdate -> IO ()
 offlineTableUpdate fileName up = do
         h <- openBinaryFile fileName ReadWriteMode
