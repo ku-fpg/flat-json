@@ -14,7 +14,10 @@ library
   exposed-modules:     Web.Scotty.CRUD,
                        Web.Scotty.CRUD.JSON,
                        Web.Scotty.CRUD.SQL,
-                       Web.Scotty.CRUD.Types
+                       Web.Scotty.CRUD.Types,
+                       Database.Flat.JSON,
+                       Database.Flat.JSON.Table,
+                       Database.Flat.JSON.Types
   -- other-modules:
   other-extensions:    FlexibleInstances,
                        OverloadedStrings,

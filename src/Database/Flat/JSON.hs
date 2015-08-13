@@ -44,15 +44,15 @@ instance Crud CRUDr where
   deleteRow = DeleteRow 
  
 
-actorCRUD :: (TableUpdate -> IO ()) -- single-threaded callback for updating
-	 -> Table               -- initial Table
-	 -> IO CRUD
-actorCRUD push env = do
+actorCRUD :: Table 
+          -> (TableUpdate -> IO ()) -- single-threaded callback for updating
+	  -> IO CRUD
+actorCRUD env push = do
 
-    table <- newTVarIO env
+    table :: TMVar Table <- newTMVarIO env
     
     let top :: STM Integer
-        top = do t <- readTVar table
+        top = do t <- readTMVar table
                  return $ foldr max 0
                           [ read (Text.unpack k)
                           | k <- HashMap.keys t
@@ -68,7 +68,7 @@ actorCRUD push env = do
         next = do
                n <- readTVar uniq
                let iD = Text.pack (show n) :: Text
-               t <- readTVar table
+               t <- readTMVar table
                if HashMap.member iD t
                then do mx <- top
                        writeTVar uniq (mx + 1)
@@ -78,22 +78,23 @@ actorCRUD push env = do
                        return iD
 
     let updateCRUD update = do
-          tab <- atomically $ takeTVar table 
+          tab <- atomically $ takeTMVar table 
           push update                     -- how do we handle failure here?
-          atomically $ putTVar table $ tableUpdate update
+          atomically $ putTMVar table $ tableUpdate update $ tab
           -- we do not return until the update has been commited to
           -- both the internal and external state
 
     return $ CRUD $ \ case 
-       CreateRow  obj -> do id_ <- atomically $ next
-                            row <-  newRow id_ obj
-                            updateCRUD (RowUpdate row)
-                            return row
+       CreateRow obj -> do id_ <- atomically $ next -- this feels wrong, allocation without locking
+                           row <- newRow id_ obj
+                           updateCRUD (RowUpdate row)
+                           return row
 
        ReadRow id_    -> atomically $ 
-                               do t <- readTVar table
+                               do t <- readTMVar table
                                   return $ HashMap.lookup id_ t
 
+          -- if you insert names with your own ids, make sure they never clash with the generated ones.
        UpdateRow id_ obj -> do row <- newRow id_ obj
                                updateCRUD $ RowUpdate row
 
@@ -109,7 +110,7 @@ persistentCRUD online fileName = do
         
         -- close then hadle
         if online
-        then actorCRUD $ onlineTableUpdate h
+        then actorCRUD tab $ onlineTableUpdate h 
         else do hClose h
-                offlineTableUpdate fileName
+                actorCRUD tab $ offlineTableUpdate fileName
 
