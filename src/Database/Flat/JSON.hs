@@ -29,22 +29,26 @@ import           Control.Natural
 import           Control.Transformation
 import           Control.Object
 
-data CRUD :: * -> * where
-  CreateRow :: Aeson.Object -> CRUD Row
-  ReadRow   :: Id           -> CRUD (Maybe Row)
-  UpdateRow :: Id -> Aeson.Object -> CRUD () 
-  DeleteRow :: Id           -> CRUD ()
+data CRUDF :: * -> * where
+  CreateRowF :: Aeson.Object       -> CRUDF Row
+  ReadRowF   :: Id                 -> CRUDF (Maybe Row)
+  UpdateRowF :: Id -> Aeson.Object -> CRUDF () 
+  DeleteRowF :: Id                 -> CRUDF ()
 
-instance Crud CRUD where
-  createRow = CreateRow
-  readRow   = ReadRow   
-  updateRow = UpdateRow 
-  deleteRow = DeleteRow 
- 
+instance CreateRow CRUDF where
+  createRow = CreateRowF
+
+instance ReadRow CRUDF where
+  readRow   = ReadRowF
+  readTable = undefined
+
+instance UpdateRow CRUDF where
+  updateRow = UpdateRowF 
+  deleteRow = DeleteRowF
 
 actorCRUD :: Table 
           -> (TableUpdate -> IO ()) -- single-threaded callback for updating
-	  -> IO (Object CRUD)
+	  -> IO (Object CRUDF)
 actorCRUD env push = do
 
     table :: TMVar Table <- newTMVarIO env
@@ -83,26 +87,27 @@ actorCRUD env push = do
           -- both the internal and external state
 
     return $ Object $ Nat $ \ case 
-       CreateRow obj -> do id_ <- atomically $ next -- this feels wrong, allocation without locking
-                           row <- newRow id_ obj
-                           updateCRUD (RowUpdate row)
-                           return row
+       CreateRowF obj -> do id_ <- atomically $ next -- this feels wrong, allocation without locking
+                            row <- newRow id_ obj
+                            updateCRUD (RowUpdate row)
+                            return row
 
-       ReadRow id_    -> atomically $ 
+       ReadRowF id_    -> atomically $ 
                                do t <- readTMVar table
                                   return $ HashMap.lookup id_ t
 
           -- if you insert names with your own ids, make sure they never clash with the generated ones.
-       UpdateRow id_ obj -> do row <- newRow id_ obj
-                               updateCRUD $ RowUpdate row
+       UpdateRowF id_ obj -> do row <- newRow id_ obj
+                                updateCRUD $ RowUpdate row
 
-       DeleteRow id_     -> updateCRUD $ RowDelete id_
+       DeleteRowF id_     -> updateCRUD $ RowDelete id_
 
-persistentCRUD :: Bool -> FilePath -> IO (Object CRUD)
+-- | Use a flat file to generate a persistent CRUD Object.
+persistentCRUD :: Bool -> FilePath -> IO (Object CRUDF)
 persistentCRUD online fileName = do
         h <- openBinaryFile fileName ReadWriteMode
         -- Read what you can, please, into a Table.
-        tab <- readTable h 
+        tab <- hReadTable h 
 
         -- TODO: check for EOF & writeable, etc
         

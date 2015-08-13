@@ -24,26 +24,6 @@ import           System.IO
 
 ----------------------------------------------------------
 
-type Table = HashMap Text Row 
-
-data TableUpdate
-        = RowUpdate Row       -- update a row with a new row, by _id.
-        | RowDelete Id        -- consider previous updates to row deleted
-        | Shutdown Text       -- last message; please stop listening. Msg for informational purposes ony.
-        deriving (Show, Eq)
-        
-instance ToJSON TableUpdate where
-   toJSON (RowUpdate row)      = toJSON row
-   toJSON (RowDelete key)      = object ["delete"   .= key]     -- no _id key
-   toJSON (Shutdown msg)       = object ["shutdown" .= msg]     -- no _id key
-
-instance FromJSON TableUpdate where
-    parseJSON (Object v) = 
-         RowUpdate <$> parseJSON (Object v) <|> 
-         RowDelete <$> v .: "delete"        <|>
-         Shutdown  <$> v .: "shutdown"
-    parseJSON _ = error "TableUpdate Object was not a valid Object"
-
 
 tableUpdate :: TableUpdate -> Table -> Table
 tableUpdate (RowUpdate row) = HashMap.insert (rowId row) row
@@ -52,11 +32,9 @@ tableUpdate (Shutdown _msg) = id
 
 -----------------------------------------------------------
 
-readTable :: Handle -> IO Table
-readTable = foldTable tableUpdate HashMap.empty
-
-foldTable :: (TableUpdate -> db -> db) -> db -> Handle -> IO db
-foldTable f z h = do
+-- do not export
+hFoldTable :: (TableUpdate -> db -> db) -> db -> Handle -> IO db
+hFoldTable f z h = do
 
     let sz = 32 * 1024 :: Int
 
@@ -81,20 +59,24 @@ foldTable f z h = do
 
     loadCRUD BS.empty z
 
-readTableUpdates :: Handle -> IO [TableUpdate]
-readTableUpdates h = foldTable (:) [] h >>= return . reverse
+hReadTableUpdates :: Handle -> IO [TableUpdate]
+hReadTableUpdates h = hFoldTable (:) [] h >>= return . reverse
 
-writeTableUpdate :: Handle -> TableUpdate -> IO ()
-writeTableUpdate h row = do
+hWriteTableUpdate :: Handle -> TableUpdate -> IO ()
+hWriteTableUpdate h row = do
         LBS.hPutStr h (encode row)
         LBS.hPutStr h "\n" -- just for prettyness, nothing else
+
+hReadTable :: Handle -> IO Table
+hReadTable = hFoldTable tableUpdate HashMap.empty
                      
-writeTable :: Handle -> Table -> IO ()
-writeTable h table = sequence_
-        [ writeTableUpdate h $ RowUpdate row    -- assuming the invarient that "_id" is the index
+hWriteTable :: Handle -> Table -> IO ()
+hWriteTable h table = sequence_
+        [ hWriteTableUpdate h $ RowUpdate row    -- assuming the invarient that "_id" is the index
         | (_,row) <- HashMap.toList table
         ]
 
+{-
 -- | push an update to a handle, and sync.
 onlineTableUpdate  :: Handle -> TableUpdate -> IO ()
 onlineTableUpdate h up = do
@@ -162,3 +144,4 @@ externalTableUpdate k = do
         done <- newTMVarIO ()
         atomically $ writeTChan updateChan (up,done)
         atomically $ takeTMVar done
+-}

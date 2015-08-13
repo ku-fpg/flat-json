@@ -133,7 +133,7 @@ update_main _    = error "crud update: unknown options"
 
 update ::  String -> IO ()
 update db = do
-    db_h <- openFile db AppendMode
+    db_h <- openBinaryFile db AppendMode
     ups :: [TableUpdate Row] <- readTableUpdates stdin
     sequence_ [ writeTableUpdate db_h up
               | up <- ups
