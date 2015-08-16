@@ -1,5 +1,5 @@
-{-# LANGUAGE OverloadedStrings, ScopedTypeVariables, TypeFamilies, TypeSynonymInstances, FlexibleInstances, GADTs #-}
-module Database.Flat.JSON.Read  where
+{-# LANGUAGE OverloadedStrings, ScopedTypeVariables, TypeFamilies, TypeSynonymInstances, FlexibleInstances, GADTs, LambdaCase #-}
+module Database.Flat.JSON.ReadOnly  where
 
 import           Control.Object
 import           Control.Natural
@@ -29,7 +29,8 @@ heapTableReadOnly fileName = do
         h <- openBinaryFile fileName ReadMode
         tab :: t <- hRollTable h
         hClose h
-        return $ Object $ Nat $ \ TableRead -> return tab
+        return $ Object $ Nat $ \ case
+          TableRead -> return tab
 
 -- Read the *file* each time a Table is requested
 fileTableReadOnly :: forall t . TableType t => FilePath -> Object (TableRead t)
