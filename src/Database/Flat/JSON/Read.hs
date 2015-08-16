@@ -11,24 +11,30 @@ import           System.IO
 
 ---------------------------------------------------------
 
-data TableRead :: * -> * where TableRead :: TableRead Table
+data TableRead :: * -> * -> * where TableRead :: TableType s => TableRead s s
 
 instance TableReader TableRead where
   tableReader = TableRead
 
--- Read the file once into the *heap*,  then return the same table 
-heapTableReadOnly :: FilePath -> IO (Object TableRead)
+-- DO NOT LIKE THIS
+-- Read the handle ever time the object method is called.
+hTableReadOnly :: forall t . TableType t => Handle -> Object (TableRead t)
+hTableReadOnly h = Object $ Nat $ \ TableRead -> do
+        tab :: t <- hRollTable h
+        return tab
+
+-- Read the file once into the *heap*,  then return the same value each time.
+heapTableReadOnly :: forall t . TableType t => FilePath -> IO (Object (TableRead t))
 heapTableReadOnly fileName = do
         h <- openBinaryFile fileName ReadMode
-        tab <- hReadTable h
+        tab :: t <- hRollTable h
         hClose h
         return $ Object $ Nat $ \ TableRead -> return tab
 
 -- Read the *file* each time a Table is requested
-fileTableReadOnly :: FilePath -> Object TableRead
+fileTableReadOnly :: forall t . TableType t => FilePath -> Object (TableRead t)
 fileTableReadOnly fileName = Object $ Nat $ \ TableRead -> do
         h <- openBinaryFile fileName ReadMode
-        tab <- hReadTable h
+        tab :: t <- hRollTable h
         hClose h
         return tab
-

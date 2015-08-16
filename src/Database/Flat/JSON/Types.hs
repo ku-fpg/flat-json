@@ -28,6 +28,7 @@ class UpdateRow f where
   updateRow :: Id -> Object -> f () -- The _id and _ts fields are ignored in the object.
   deleteRow :: Id           -> f ()
 
+
 ------------------------------------------------------------------------------------
 -- Basic synonyms for key structures
 --
@@ -96,10 +97,51 @@ instance FromJSON TableUpdate where
 
 
 -----------------------------------
+{-
+
+class CreateRow f where
+  createRow :: Object       -> f Row
+
+
+  
+class ReadRow f where
+  readRow   :: Id           -> f (Maybe Row)
+  readTable ::                 f Table
+
+class UpdateRow f where
+  updateRow :: Id -> Object -> f () -- The _id and _ts fields are ignored in the object.
+  deleteRow :: Id           -> f ()
+
+
+ -}
 
 class TableReader f where
-  tableReader :: f Table
+  tableReader :: TableType s => f s s       
+                                -- ^ return an entire (projection of a) db.
+                                -- Note: this might not be all the data; for example it might be just 
+                                -- next valid identifer.
+
+class TableReader f => TableAllocator f where
+  -- ^ allocate a new record. 
+  -- Note: The allocated Row has access to the whole of the state.
+  -- Thread safe.
+  tableAllocator :: (s -> Row) -> f s Row
 
 class TableReader f => TableUpdater f where
-  -- ^ update a table. Not thread-safe (aka hPutStr).
-  tableUpdater :: TableUpdate -> f ()
+  -- ^ update a table. Thread safe. To access to the underlying state.
+  tableUpdater :: TableUpdate -> f s ()
+
+class TableType db where
+  initT   :: db
+  updateT :: TableUpdate -> db -> db
+  
+instance TableType Integer where
+  initT = 1
+  updateT _ = succ
+
+instance TableType [TableUpdate] where
+  initT = []
+  updateT = (:)
+         
+        
+  

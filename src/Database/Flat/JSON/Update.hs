@@ -1,9 +1,10 @@
 {-# LANGUAGE OverloadedStrings, ScopedTypeVariables, TypeFamilies, TypeSynonymInstances, FlexibleInstances, GADTs, LambdaCase #-}
 module Database.Flat.JSON.Update where
 
-import           Control.Object
 import           Control.Natural
+import           Control.Object
 import           Control.Transformation
+
 
 import           Database.Flat.JSON.Types
 import           Database.Flat.JSON.Table
@@ -13,21 +14,24 @@ import           System.IO
 
 ---------------------------------------------------------
 
+
 data TableReadUpdate :: * -> * where 
-        TableRead   ::                TableReadUpdate Table
+--        TableRead   ::                TableReadUpdate Table
         TableUpdate :: TableUpdate -> TableReadUpdate ()
 
-instance TableReader TableReadUpdate where
-  tableReader = TableRead
+--instance TableReader TableReadUpdate where
+--  tableReader = TableRead
 
 instance TableUpdater TableReadUpdate where
   tableUpdater = TableUpdate
 
+heapTableUpdate :: FilePath -> IO (Object TableReadUpdate)
+heapTableUpdate fileName = return $ fileTableUpdate fileName -- TODO
+    
 fileTableUpdate :: FilePath -> Object TableReadUpdate
 fileTableUpdate fileName = Object $ Nat $ \ case
-    TableRead -> R.fileTableReadOnly fileName # R.TableRead
+--    TableRead -> R.fileTableReadOnly fileName # R.TableRead
     TableUpdate up -> do
             h <- openBinaryFile fileName AppendMode
             hWriteTableUpdate h up
             hClose h
-

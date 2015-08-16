@@ -46,7 +46,8 @@ instance UpdateRow CRUDF where
   updateRow = UpdateRowF 
   deleteRow = DeleteRowF
 
-actorCRUD :: Table 
+{-
+  actorCRUD :: Table 
           -> (TableUpdate -> IO ()) -- single-threaded callback for updating
 	  -> IO (Object CRUDF)
 actorCRUD env push = do
@@ -117,3 +118,27 @@ persistentCRUD online fileName = do
         else do hClose h
                 actorCRUD tab $ offlineTableUpdate fileName
 
+
+{-
+creator :: (TableReader f, TableUpdater f, TableAllocator f) => Object f -> IO (Object RowCreator)
+
+
+appender :: TableUpdater f => Object f -> Object RowUpdater
+-}
+
+-}
+
+data RowReader :: * -> * where
+  ReadRow :: Id -> RowReader (Maybe Row)
+
+instance ReadRow RowReader where
+  readRow   = ReadRow
+  readTable = undefined
+
+reader :: TableReader f => Object (f Table) -> (Object RowReader)
+reader o = Object $ Nat $ \ case 
+  ReadRow id_ -> do
+          tab <- o # tableReader
+          return $ HashMap.lookup id_ tab
+
+instance TableType Table where

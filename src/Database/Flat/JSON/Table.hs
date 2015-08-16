@@ -21,9 +21,7 @@ import           Data.Text(Text)
 
 import           System.IO
 
-
 ----------------------------------------------------------
-
 
 tableUpdate :: TableUpdate -> Table -> Table
 tableUpdate (RowUpdate row) = HashMap.insert (rowId row) row
@@ -33,6 +31,10 @@ tableUpdate (Shutdown _msg) = id
 -----------------------------------------------------------
 
 -- do not export
+
+hRollTable :: TableType t => Handle -> IO t
+hRollTable = hFoldTable updateT initT
+
 hFoldTable :: (TableUpdate -> db -> db) -> db -> Handle -> IO db
 hFoldTable f z h = do
 
