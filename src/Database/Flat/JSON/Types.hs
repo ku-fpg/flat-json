@@ -26,8 +26,14 @@ class ReadRow f where
 
 class UpdateRow f where
   updateRow :: Id -> Object -> f () -- The _id and _ts fields are ignored in the object.
+
+class DeleteRow f where
   deleteRow :: Id           -> f ()
 
+------------------------------------------------------------------------------------
+
+class CloseResource f where
+  closeResource :: Text -> f () -- close a resource.
 
 ------------------------------------------------------------------------------------
 -- Basic synonyms for key structures
@@ -115,7 +121,16 @@ class UpdateRow f where
 
  -}
 
+-- What can you do with a tableReader?
+--  * Ask for a fresh id
+--  * Ask for a specific record
+
+--class tableGensym f where
+--  tableGensym :: f 
+
 class TableReader f where
+  tableLookup :: Id -> f s (Maybe Row)
+  tableGensym :: f s Id
   tableReader :: TableType s => f s s       
                                 -- ^ return an entire (projection of a) db.
                                 -- Note: this might not be all the data; for example it might be just 

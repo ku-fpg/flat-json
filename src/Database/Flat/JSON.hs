@@ -135,6 +135,10 @@ instance ReadRow RowReader where
   readRow   = ReadRow
   readTable = undefined
 
+
+-- can handle read once, vs read each time.
+-- read each time can be optimized for space,
+-- because we scan for the returned value on the fly.
 reader :: TableReader f => Object (f Table) -> (Object RowReader)
 reader o = Object $ Nat $ \ case 
   ReadRow id_ -> do
