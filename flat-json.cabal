@@ -11,11 +11,7 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Web.Scotty.CRUD,
-                       Web.Scotty.CRUD.JSON,
-                       Web.Scotty.CRUD.SQL,
-                       Web.Scotty.CRUD.Types,
-                       Database.Flat.JSON,
+  exposed-modules:     Database.Flat.JSON,
                        Database.Flat.JSON.SQL,
                        Database.Flat.JSON.Table,
                        Database.Flat.JSON.Types
