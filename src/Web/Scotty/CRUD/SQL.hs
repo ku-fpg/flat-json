@@ -16,8 +16,8 @@ import           Web.Scotty.CRUD.Types
 
 ------------------------------------------------------------------------------------
 
-sqlSelect :: [Text] -> [Row] -> [Row]
-sqlSelect ns rows = fmap (\ row -> HashMap.fromList [ (k,v) | (k,v) <- HashMap.toList row, k `elem` ns]) rows
+sqlSelect :: [Text] -> Row -> Row
+sqlSelect ns row = HashMap.fromList [ (k,v) | (k,v) <- HashMap.toList row, k `elem` ns]
 
 
 sqlSortBy :: Text -> [Row] -> [Row]
@@ -36,6 +36,7 @@ sqlSortBy nm rows = map snd $ sortBy cmp $ prep
 sqlWhere :: Text -> (SortKey -> Bool) -> Table Row -> Table Row
 sqlWhere nm op tab = liftTable (filter f) tab
   where
+      f :: HashMap.HashMap Text Value -> Bool
       f row = case HashMap.lookup nm row of
                Just value -> op (SortKey value)
                Nothing -> False

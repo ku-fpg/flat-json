@@ -29,6 +29,7 @@ import           Control.Natural
 import           Control.Transformation
 import           Control.Object
 
+{-
 data CRUDF :: * -> * where
   CreateRowF :: Aeson.Object       -> CRUDF Row
   ReadRowF   :: Id                 -> CRUDF (Maybe Row)
@@ -45,6 +46,7 @@ instance ReadRow CRUDF where
 instance UpdateRow CRUDF where
   updateRow = UpdateRowF 
   deleteRow = DeleteRowF
+-}
 
 {-
   actorCRUD :: Table 
@@ -127,7 +129,7 @@ appender :: TableUpdater f => Object f -> Object RowUpdater
 -}
 
 -}
-
+{-
 data RowReader :: * -> * where
   ReadRow :: Id -> RowReader (Maybe Row)
 
@@ -146,3 +148,4 @@ reader o = Object $ Nat $ \ case
           return $ HashMap.lookup id_ tab
 
 instance TableType Table where
+-}

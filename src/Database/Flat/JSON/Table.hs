@@ -26,14 +26,13 @@ import           System.IO
 tableUpdate :: TableUpdate -> Table -> Table
 tableUpdate (RowUpdate row) = HashMap.insert (rowId row) row
 tableUpdate (RowDelete key) = HashMap.delete key
-tableUpdate (Shutdown _msg) = id
 
 -----------------------------------------------------------
 
 -- do not export
 
-hRollTable :: TableType t => Handle -> IO t
-hRollTable = hFoldTable updateT initT
+hRollTable :: Table -> Handle -> IO Table
+hRollTable = hFoldTable tableUpdate
 
 hFoldTable :: (TableUpdate -> db -> db) -> db -> Handle -> IO db
 hFoldTable f z h = do

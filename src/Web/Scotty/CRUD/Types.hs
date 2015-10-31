@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, ScopedTypeVariables, TypeFamilies, TypeSynonymInstances, FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings, ScopedTypeVariables, TypeFamilies, TypeSynonymInstances, FlexibleInstances, DeriveFunctor, DeriveTraversable #-}
 module Web.Scotty.CRUD.Types (
        CRUD(..),
        Id, Table, Row, Named(..),
@@ -35,13 +35,13 @@ type Id        = Text
 
 type Table row = HashMap Id row
 
--- | The default row is a aeson JSON object.
+-- | The default row is an aeson JSON object.
 type Row       = Object
 
 ------------------------------------------------------------------------------------
 -- | A pair of Name(Id) and row.
 data Named row = Named Id row
-   deriving (Eq,Show)
+   deriving (Eq,Show,Functor,Traversable,Foldable)
 
 instance FromJSON row => FromJSON (Named row) where
     parseJSON (Object v) = Named
