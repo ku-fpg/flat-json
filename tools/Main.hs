@@ -23,9 +23,6 @@ import           System.Environment
 import           System.IO
 
 import           Database.Flat.JSON
-import           Database.Flat.JSON.Types
-import           Database.Flat.JSON.Table
-import           Database.Flat.JSON.SQL
 
 main :: IO ()
 main = do

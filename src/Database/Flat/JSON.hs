@@ -2,150 +2,207 @@
 module Database.Flat.JSON where
 
 import           Control.Applicative
-import           Control.Concurrent
-import           Control.Concurrent.STM
 
-import qualified Data.Aeson as Aeson
-
-import           Data.Aeson hiding (Object)
-import           Data.Aeson.Types hiding (Object)
-import           Data.Attoparsec.ByteString as Atto
+import           Data.Aeson
+import           Data.Aeson.Parser as P
+import qualified Data.Attoparsec.ByteString as Atto
+import           Data.Aeson.Types 
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
-
-import           Data.HashMap.Strict (HashMap)
+import           Data.Char
 import qualified Data.HashMap.Strict as HashMap
-
-import           Data.Char (isDigit)
+import           Data.HashMap.Strict (HashMap)
+import           Data.List
+import           Data.String
 import           Data.Text(Text)
 import qualified Data.Text as Text
-import           Data.Time.Clock
+
+
 
 import           System.IO
 
-import           Database.Flat.JSON.Types
-import           Database.Flat.JSON.Table
 
-import           Control.Natural
-import           Control.Transformation
-import           Control.Object
+------------------------------------------------------------------------------------
+-- Basic synonyms for key structures
+--
+-- | Every Row must have an '_id' field, of type 'Text'.
+type Id        = Text
 
-{-
-data CRUDF :: * -> * where
-  CreateRowF :: Aeson.Object       -> CRUDF Row
-  ReadRowF   :: Id                 -> CRUDF (Maybe Row)
-  UpdateRowF :: Id -> Aeson.Object -> CRUDF () 
-  DeleteRowF :: Id                 -> CRUDF ()
+------------------------------------------------------------------------------------
+-- | A Row is a Object, with "_id" (the unique identifier, a Text).
 
-instance CreateRow CRUDF where
-  createRow = CreateRowF
+newtype Row = Row Object
+   deriving (Eq, Show)
 
-instance ReadRow CRUDF where
-  readRow   = ReadRowF
-  readTable = undefined
+instance FromJSON Row where
+    parseJSON (Object v) = 
+         pure Row <* (v .: "_id" :: Parser Text)
+                  <*> pure v
+    parseJSON _ = fail "row should be an object"
 
-instance UpdateRow CRUDF where
-  updateRow = UpdateRowF 
-  deleteRow = DeleteRowF
--}
+instance ToJSON Row where
+   toJSON (Row o) = Object o
 
-{-
-  actorCRUD :: Table 
-          -> (TableUpdate -> IO ()) -- single-threaded callback for updating
-	  -> IO (Object CRUDF)
-actorCRUD env push = do
+rowId :: Row -> Text
+rowId (Row o) = case parse (.: "_id") o of
+                  Success v -> v
+                  Error msg -> error $ "rowId failed " ++ msg
 
-    table :: TMVar Table <- newTMVarIO env
-    
-    let top :: STM Integer
-        top = do t <- readTMVar table
-                 return $ foldr max 0
-                          [ read (Text.unpack k)
-                          | k <- HashMap.keys t
-                          , Text.all isDigit k
-                          ]
+rowLookup :: Text -> Row -> Maybe Value
+rowLookup field (Row o) = case parse (.: field) o of
+                           Success v -> Just v
+                           Error {}  -> Nothing
 
-    uniq <- atomically $ do
-               mx <- top
-               newTVar (mx + 1)
+keysOfRow :: Row -> [Text]
+keysOfRow (Row o) = HashMap.keys o 
 
-    -- Get the next, uniq id when creating a row in the table.
-    let next :: STM Text           
-        next = do
-               n <- readTVar uniq
-               let iD = Text.pack (show n) :: Text
-               t <- readTMVar table
-               if HashMap.member iD t
-               then do mx <- top
-                       writeTVar uniq (mx + 1)
-                       next
-                 -- Great, we can use this value
-               else do writeTVar uniq $! (n + 1)
-                       return iD
+newRow :: Id -> Object -> Row
+newRow id_ obj = Row 
+               $ HashMap.insert "_id" (toJSON id_)
+               $ obj 
+                     
+rowToList :: Row -> [(Text,Value)]
+rowToList (Row o) = HashMap.toList o
 
-    let updateCRUD update = do
-          tab <- atomically $ takeTMVar table 
-          push update                     -- how do we handle failure here?
-          atomically $ putTMVar table $ tableUpdate update $ tab
-          -- we do not return until the update has been commited to
-          -- both the internal and external state
+-----------------------------------
 
-    return $ Object $ Nat $ \ case 
-       CreateRowF obj -> do id_ <- atomically $ next -- this feels wrong, allocation without locking
-                            row <- newRow id_ obj
-                            updateCRUD (RowUpdate row)
-                            return row
+type Table = HashMap Text Row 
 
-       ReadRowF id_    -> atomically $ 
-                               do t <- readTMVar table
-                                  return $ HashMap.lookup id_ t
-
-          -- if you insert names with your own ids, make sure they never clash with the generated ones.
-       UpdateRowF id_ obj -> do row <- newRow id_ obj
-                                updateCRUD $ RowUpdate row
-
-       DeleteRowF id_     -> updateCRUD $ RowDelete id_
-
--- | Use a flat file to generate a persistent CRUD Object.
-persistentCRUD :: Bool -> FilePath -> IO (Object CRUDF)
-persistentCRUD online fileName = do
-        h <- openBinaryFile fileName ReadWriteMode
-        -- Read what you can, please, into a Table.
-        tab <- hReadTable h 
-
-        -- TODO: check for EOF & writeable, etc
+data TableUpdate
+        = RowUpdate Row       -- update a row with a new row, by _id.
+        | RowDelete Id        -- consider previous updates to row deleted
+        deriving (Show, Eq)
         
-        -- close then hadle
-        if online
-        then actorCRUD tab $ onlineTableUpdate h 
-        else do hClose h
-                actorCRUD tab $ offlineTableUpdate fileName
+instance ToJSON TableUpdate where
+   toJSON (RowUpdate row)      = toJSON row
+   toJSON (RowDelete key)      = object ["delete"   .= key]     -- no _id key
+
+instance FromJSON TableUpdate where
+    parseJSON (Object v) = 
+         RowUpdate <$> parseJSON (Object v) <|> 
+         RowDelete <$> v .: "delete"
+    parseJSON _ = error "TableUpdate Object was not a valid Object"
+
+----------------------------------------------------------
+
+tableUpdate :: TableUpdate -> Table -> Table
+tableUpdate (RowUpdate row) = HashMap.insert (rowId row) row
+tableUpdate (RowDelete key) = HashMap.delete key
+
+-----------------------------------------------------------
+
+-- do not export
+
+hRollTable :: Table -> Handle -> IO Table
+hRollTable = hFoldTable tableUpdate
+
+hFoldTable :: (TableUpdate -> db -> db) -> db -> Handle -> IO db
+hFoldTable f z h = do
+
+    let sz = 32 * 1024 :: Int
+
+    let loadCRUD bs env
+          | BS.null bs = do
+                  bs' <- BS.hGet h sz
+                  if BS.null bs'
+                  then return env        -- done, done, done (EOF)
+                  else loadCRUD bs' env
+          | otherwise =
+                  parseCRUD (Atto.parse P.json bs) env
+        parseCRUD (Atto.Fail bs _ msg) env
+                | BS.all (isSpace . chr . fromIntegral) bs = loadCRUD BS.empty env
+                | otherwise = fail $ "parse error: " ++ msg
+        parseCRUD (Atto.Partial k) env = do
+                  bs <- BS.hGet h sz    
+                  parseCRUD (k bs) env
+        parseCRUD (Atto.Done bs r) env = do
+                  case fromJSON r of
+                    Error msg -> error msg
+                    Success update -> loadCRUD bs $! f update env
+
+    loadCRUD BS.empty z
+
+hReadTableUpdates :: Handle -> IO [TableUpdate]
+hReadTableUpdates h = hFoldTable (:) [] h >>= return . reverse
+
+hWriteTableUpdate :: Handle -> TableUpdate -> IO ()
+hWriteTableUpdate h row = do
+        LBS.hPutStr h (encode row)
+        LBS.hPutStr h "\n" -- just for prettyness, nothing else
+
+hReadTable :: Handle -> IO Table
+hReadTable = hFoldTable tableUpdate HashMap.empty
+                     
+hWriteTable :: Handle -> Table -> IO ()
+hWriteTable h table = sequence_
+        [ hWriteTableUpdate h $ RowUpdate row    -- assuming the invarient that "_id" is the index
+        | (_,row) <- HashMap.toList table
+        ]
 
 
-{-
-creator :: (TableReader f, TableUpdater f, TableAllocator f) => Object f -> IO (Object RowCreator)
+sqlSortBy :: Text -> [Row] -> [Row]
+sqlSortBy nm rows = map snd $ sortBy cmp $ prep
+          where
+                 cmp  a b = fst a `compare` fst b
+
+                 key :: Row -> Maybe SortKey
+                 key row = SortKey <$> rowLookup nm row
+
+                 prep :: [(Maybe SortKey,Row)]
+                 prep = map (\ v -> (key v,v)) rows
 
 
-appender :: TableUpdater f => Object f -> Object RowUpdater
--}
 
--}
-{-
-data RowReader :: * -> * where
-  ReadRow :: Id -> RowReader (Maybe Row)
+sqlWhere :: Text -> (SortKey -> Bool) -> Table -> Table
+sqlWhere nm op tab = HashMap.filter f tab
+  where
+      f :: Row -> Bool
+      f row = case rowLookup nm row of
+               Just value -> op (SortKey value)
+               Nothing -> False
 
-instance ReadRow RowReader where
-  readRow   = ReadRow
-  readTable = undefined
+------------------------------------------------------------------------------------
+
+newtype SortKey = SortKey Value
+  deriving (Eq,Show)
+
+instance Ord SortKey where
+  compare (SortKey (String s1)) (SortKey (String s2)) = s1 `compare` s2
+  compare (SortKey (Number s1)) (SortKey (Number s2)) = s1 `compare` s2
+  compare s1 s2 = show s1 `compare` show s2
+
+instance Num SortKey where
+  (+) = error "(+)"
+  (-) = error "(-)"
+  (*) = error "(*)"
+  abs = error "abs"
+  signum = error "signum"
+
+  fromInteger = SortKey . Number . fromInteger
+
+instance Fractional SortKey where
+  recip = error "recip"
+  fromRational = SortKey . Number . fromRational
+
+instance IsString SortKey where
+  fromString = SortKey . String . fromString
 
 
--- can handle read once, vs read each time.
--- read each time can be optimized for space,
--- because we scan for the returned value on the fly.
-reader :: TableReader f => Object (f Table) -> (Object RowReader)
-reader o = Object $ Nat $ \ case 
-  ReadRow id_ -> do
-          tab <- o # tableReader
-          return $ HashMap.lookup id_ tab
+like :: SortKey -> Text -> Bool
+like (SortKey (String s)) ms = case parsePercent ms of
+    (False,txt,True ) -> txt `Text.isPrefixOf` s
+    (True, txt,False) -> txt `Text.isSuffixOf` s
+    (True, txt,True ) -> txt `Text.isInfixOf` s
+    (False,txt,False) -> txt == s
+like _ _ = False
 
-instance TableType Table where
--}
+parsePercent :: Text -> (Bool,Text,Bool)
+parsePercent txt0 = (hd,txt2,tl)
+  where
+    (hd,txt1) = if not (Text.null txt0) && Text.head txt0 == '%'
+                then (True,Text.tail txt0)
+                else (False,txt0)
+
+    (txt2,tl) = if not (Text.null txt1) && Text.last txt1 == '%'
+                then (Text.init txt1,True)
+                else (txt1,False)
