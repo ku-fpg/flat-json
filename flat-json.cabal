@@ -11,10 +11,7 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Database.Flat.JSON,
-                       Database.Flat.JSON.SQL,
-                       Database.Flat.JSON.Table,
-                       Database.Flat.JSON.Types
+  exposed-modules:     Database.Flat.JSON
   -- other-modules:
   other-extensions:    FlexibleInstances,
                        OverloadedStrings,
