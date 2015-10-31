@@ -1,5 +1,0 @@
-Runing Tests
-------------
-
-    $ mkdir tmp
-

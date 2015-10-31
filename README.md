@@ -1,4 +1,4 @@
-CRUD
-====
+Flat JSON
+=========
 
-Create, read, update and delete support in scotty.
+A flat file format for storing JSON records.
