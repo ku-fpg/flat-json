@@ -12,31 +12,13 @@ import           Data.HashMap.Strict (HashMap)
 import           Data.Text(Text)
 
 ------------------------------------------------------------------------------------
--- | A CRUD is a OO-style database Table of typed rows, with getters and setters.
-
-type CRUDRow f = (CreateRow f, ReadRow f, UpdateRow f, DeleteRow f)
-
-class CreateRow f where
-  createRow :: Object       -> f Row
-
-class ReadRow f where
-  readRow   :: Id           -> f (Maybe Row)
-  readTable ::                 f Table
-
-class UpdateRow f where
-  updateRow :: Id -> Object -> f () -- The _id fields is overwritten in the object.
-
-class DeleteRow f where
-  deleteRow :: Id           -> f ()
-
-------------------------------------------------------------------------------------
 -- Basic synonyms for key structures
 --
--- | Every (Named) Row must have an id field.
+-- | Every Row must have an '_id' field, of type 'Text'.
 type Id        = Text
 
 ------------------------------------------------------------------------------------
--- | A Row is a Object, with "_id" (the unique identifier, a String).
+-- | A Row is a Object, with "_id" (the unique identifier, a Text).
 
 newtype Row = Row Object
    deriving (Eq, Show)
@@ -55,15 +37,22 @@ rowId (Row o) = case parse (.: "_id") o of
                   Success v -> v
                   Error msg -> error $ "rowId failed " ++ msg
 
-lookupRow :: FromJSON a => Text -> Row -> Result a
-lookupRow field (Row o) = parse (.: field) o 
+rowLookup :: Text -> Row -> Maybe Value
+rowLookup field (Row o) = case parse (.: field) o of
+                           Success v -> Just v
+                           Error {}  -> Nothing
 
-newRow :: Id -> Object -> IO Row
-newRow id_ obj = do
-        return $ Row 
+keysOfRow :: Row -> [Text]
+keysOfRow (Row o) = HashMap.keys o 
+
+newRow :: Id -> Object -> Row
+newRow id_ obj = Row 
                $ HashMap.insert "_id" (toJSON id_)
                $ obj 
                      
+rowToList :: Row -> [(Text,Value)]
+rowToList (Row o) = HashMap.toList o
+
 -----------------------------------
 
 type Table = HashMap Text Row 

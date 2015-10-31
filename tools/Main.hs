@@ -22,11 +22,10 @@ import           Network.Wai
 import           System.Environment
 import           System.IO
 
-import           Web.Scotty.CRUD
-import           Web.Scotty.CRUD.JSON
-import           Web.Scotty.CRUD.SQL
-
-
+import           Database.Flat.JSON
+import           Database.Flat.JSON.Types
+import           Database.Flat.JSON.Table
+import           Database.Flat.JSON.SQL
 
 main :: IO ()
 main = do
@@ -39,25 +38,25 @@ main = do
           ("delta":opts')                 -> delta_main     opts'
           ("where":opts')                  -> where_main    opts'
           _ -> error $ unlines
-                [ "usage: crud [options] [command] [files]"
+                [ "usage: flat-json [options] [command] [files]"
                 , "         where command = compress | table | update | delta"
                 , ""
                 , "  -- compress a db"
-                , "  crud compress < input.json > compressed-output.json"
-                , "  crud compress db.json"
+                , "  flat-json compress < input.json > compressed-output.json"
+                , "  flat-json compress db.json"
                 , ""
                 , "  -- output an ASCII table"
-                , "  crud [--'<width>'] table < input.json | less"
+                , "  flat-json [--'<width>'] table < input.json | less"
                 , "        --<width> : max width of each column (default 20)"
                 , ""
                 , "  -- update a db"
-                , "  crud update db.json < new.json"
+                , "  flat-json update db.json < new.json"
                 , ""
                 , "  -- find the delta differences between a db and a new-db"
-                , "  crud delta db.json new-db.json"
+                , "  flat-json delta db.json new-db.json"
                 , ""
                 , "  -- find the rows in db that match the search criteria"
-                , "  crud where <column-name> <operator> <match> < db.json"
+                , "  flat-json where <column-name> <operator> <match> < db.json"
                 ,"       Search:"
                 ,"         * id like '%'    -- match rows that have an id selector"
                 ,"         * id == 1234     -- match row with id == 1234"
@@ -71,16 +70,16 @@ main = do
 
 compress_main :: [String] -> IO ()
 compress_main [] = do
-        tab :: Table Row <- readTable stdin
-        writeTable stdout tab
+        tab :: Table <- hReadTable stdin
+        hWriteTable stdout tab
 compress_main [db] = do
         h <- openBinaryFile db ReadMode
-        tab :: Table Row <- readTable h
+        tab :: Table <- hReadTable h
         hClose h
         h' <- openBinaryFile db WriteMode
-        writeTable h' tab
+        hWriteTable h' tab
         hClose h'
-compress_main _ = error "crud compress: unknown options"
+compress_main _ = error "flat-json compress: unknown options"
 
 ------------------------------------------------------------------------------------------------------------
 
@@ -90,22 +89,21 @@ table_main ['-':'-':ns] | all isDigit ns && not (null ns) = do
         let mx = read ns
 
         -- Read what you can, please, into a Table.
-        tab :: Table Row <- readTable stdin
+        tab :: Table <- hReadTable stdin
 
 --        print (HashMap.elems tab)
 --        print (map HashMap.keys (HashMap.elems tab))
 
-        let keys :: Set Text = Set.fromList $ pack "id" : concatMap HashMap.keys (HashMap.elems tab)
+        let keys :: Set Text = Set.fromList $ concatMap keysOfRow (HashMap.elems tab)
 
         let keyMx = id -- fmap (\ (k,v) -> (k,max (Text.length k) v))
                   $ sortBy (\ (k1,_) (k2,_) -> if k1 == k2 then EQ else
-                                               if k1 == pack "id" then LT else
-                                               if k2 == pack "id" then GT else
+                                               if k1 == "_id" then LT else
+                                               if k2 == "_id" then GT else
                                                compare k1 k2)
                   $ HashMap.toList
                   $ HashMap.fromListWith max $
-                        [ (k',min mx $ length $ raw $ encode v') | (_k,v) <- HashMap.toList tab, (k',v') <- HashMap.toList v ] ++
-                        [ (pack "id",Text.length k) | (k,_v) <- HashMap.toList tab] ++
+                        [ (k',min mx $ length $ raw $ encode v') | (_k,v) <- HashMap.toList tab, (k',v') <- rowToList v ] ++
                         [ (k,Text.length k) | k <- Set.toList keys ]
 
 
@@ -114,28 +112,28 @@ table_main ['-':'-':ns] | all isDigit ns && not (null ns) = do
 --        putStrLn $ show [ (k,v) | (k,v) <- keyMx ]
         putStrLn $ unwords [ rjust (unpack k) v | (k,v) <- keyMx ]
 
-        sequence_ [ putStrLn $ unwords [ case HashMap.lookup kk v' of
+        sequence_ [ putStrLn $ unwords [ case lookup kk v' of
                                            Nothing -> rjust "-" kv
                                            Just o -> rjust o kv
                                        | (kk,kv) <- keyMx
                                        ]
                   | (k,v) <- HashMap.toList tab
-                  , let v' = HashMap.insert (pack "id") (unpack k) $ fmap (raw . encode) v
+                  , let v' = fmap (\ (a,b) -> (a,raw (encode b))) $ rowToList v
                   ]
 table_main [] = table_main ["--20"]
-table_main _ = error "crud table: bad flags"
+table_main _ = error "flat-json table: bad flags"
 
 ------------------------------------------------------------------------------------------------------------
 
 update_main :: [String] -> IO ()
 update_main [db] = update db
-update_main _    = error "crud update: unknown options"
+update_main _    = error "flat-json update: unknown options"
 
 update ::  String -> IO ()
 update db = do
     db_h <- openBinaryFile db AppendMode
-    ups :: [TableUpdate Row] <- readTableUpdates stdin
-    sequence_ [ writeTableUpdate db_h up
+    ups :: [TableUpdate] <- hReadTableUpdates stdin
+    sequence_ [ hWriteTableUpdate db_h up
               | up <- ups
               ]
     hClose db_h
@@ -145,28 +143,22 @@ update db = do
 
 delta_main :: [String] -> IO ()
 delta_main [db,db_new] = delta db db_new
-delta_main _           = error "crud delta: unknown options"
+delta_main _           = error "flat-json delta: unknown options"
 
 -- What update would be required to turn the old db into the new db?
 -- Can include deletes.
 delta :: String -> String -> IO ()
 delta db db_new = do
-    old  :: Table Row <- openFile db     ReadMode >>= readTable
-    new  :: Table Row <- openFile db_new ReadMode >>= readTable
+    old  :: Table <- openFile db     ReadMode >>= hReadTable
+    new  :: Table <- openFile db_new ReadMode >>= hReadTable
     let iDs = HashMap.keys old ++ [ k | k <- HashMap.keys new, not (k `HashMap.member` old) ]
     sequence_ [ case (HashMap.lookup iD old,HashMap.lookup iD new) of
    	      	  (lhs,rhs) | lhs == rhs -> return ()
-                  (_,     Just n)   -> writeTableUpdate stdout (RowUpdate (Named iD n :: Named Row))
-                  (Just _,Nothing)  -> writeTableUpdate stdout (RowDelete iD :: TableUpdate Row)
+                  (_,     Just rhs) -> hWriteTableUpdate stdout (RowUpdate (rhs :: Row))
+                  (Just _,Nothing)  -> hWriteTableUpdate stdout (RowDelete iD :: TableUpdate)
                   (Nothing,Nothing) -> error "internal error"
               | iD <- iDs
               ]
- {-
-    sequence_ [ do ans1 <- getRow crud iD
-                   case HashMap.lookup ans1 of
-                        Nothing             -> updateRow crud (Named iD row)
-                        Just (Named _ row') -> updateRow crud (Named iD (f row row'))
--}
     return ()
 
 
@@ -174,8 +166,8 @@ delta db db_new = do
 
 where_main :: [String] ->  IO ()
 where_main [nm,op,match] = do
-    tab0 :: Table Row <- readTable stdin
-    writeTable stdout $ sqlWhere (Text.pack nm) (\ lhs ->
+    tab0 :: Table <- hReadTable stdin
+    hWriteTable stdout $ sqlWhere (Text.pack nm) (\ lhs ->
           or [ parse_op op lhs rhs
              | rhs <- rhss
              ]) tab0
@@ -201,7 +193,7 @@ where_main [nm,op,match] = do
                      [(a::Scientific,"")] -> [realToFrac a]
                      _                    -> []
 
-where_main _ = error "crud where: unknown options"
+where_main _ = error "flat-json where: unknown options"
 
 ------------------------------------------------------------------------------------------------------------
 

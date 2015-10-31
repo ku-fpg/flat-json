@@ -16,6 +16,7 @@ library
                        Web.Scotty.CRUD.SQL,
                        Web.Scotty.CRUD.Types,
                        Database.Flat.JSON,
+                       Database.Flat.JSON.SQL,
                        Database.Flat.JSON.Table,
                        Database.Flat.JSON.Types
   -- other-modules:
@@ -40,7 +41,7 @@ library
   default-language:    Haskell2010
   Ghc-options:         -Wall
 
-executable crud
+executable flat-json
     build-depends:     flat-json,
                        aeson                >= 0.9  && < 0.10,
                        base                 >= 4.6,
@@ -57,7 +58,7 @@ executable crud
     default-language:  Haskell2010
     ghc-options:       -Wall
 
-Test-Suite test-crud
+Test-Suite test-flat-json
     type:              exitcode-stdio-1.0
     main-is:           Core.hs
     other-modules:     QC
